@@ -10,5 +10,5 @@ P = create_plugin_instance({
         {'uri': 'basic/history', 'name': '이력 / 오류'},
     ]},
 })
-from .mod_basic import ModuleBasic
-P.set_module_list([ModuleBasic])
+from .bootstrap import ModuleBootstrap
+P.set_module_list([ModuleBootstrap])

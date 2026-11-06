@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:960px;margin:24px auto;padding:26px;background:#111e32;color:#edf3ff;border-radius:14px;overflow-wrap:anywhere">
+  <h2 style="color:#edf3ff">{{ info.title }} <small>v{{ info.version }}</small></h2>
+  <p><strong style="color:#ffbaae">파일 설치 완료 · 실행 준비 실패</strong></p>
+  <p>FF가 플러그인 파일을 찾았지만 초기화 중 오류가 발생했습니다. 다운로드와 예약 수집은 실행되지 않습니다.</p>
+  <h3 style="color:#edf3ff">발생한 오류</h3>
+  <pre style="padding:16px;background:#192a43;color:#ffbaae;white-space:pre-wrap">{{ error }}</pre>
+  {% if missing in ('requests', 'bs4', 'soupsieve') %}
+  <p>필요한 Python 패키지가 없습니다. FF 컨테이너 콘솔에서 다음 명령을 실행한 뒤 FF를 재시작하세요.</p>
+  <pre style="padding:16px;background:#192a43;color:#edf3ff;white-space:pre-wrap">{{ install_command }}</pre>
+  {% elif missing == 'fcntl' %}
+  <p>이 버전은 Linux 기반 FF용입니다. NAS의 Linux FF 컨테이너에서 실행하세요.</p>
+  {% else %}
+  <p>FF의 시스템 로그에서 <code style="color:#9dccff">그누보드 TXT 다운로더 초기화 실패</code> 바로 아래의 오류 내용을 확인하세요. 위 오류 문구와 함께 전달하면 원인을 확인할 수 있습니다.</p>
+  {% endif %}
+  <p>플러그인 업데이트 후 FF를 재시작해야 수정된 파일이 적용됩니다. 설정·이력 DB와 받은 TXT를 삭제할 필요는 없습니다.</p>
+</div>
+{% endblock %}

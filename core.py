@@ -24,7 +24,7 @@ from .organizer import (Engine as Store, OrganizerError, Cancelled, file_digest,
 
 Error = OrganizerError
 DEFAULTS = {
-    'board_url': '', 'download_path': '', 'target_path': '',
+    'board_url': '', 'download_path': '', 'target_path': '', 'short_path': '',
     'list_selector': '.list-body .item-subject, #bo_list .td_subject a',
     'title_selector': 'h1[itemprop="headline"], #bo_v_title .bo_v_tit',
     'body_selector': '.view-content[itemprop="description"], #bo_v_con',
@@ -98,7 +98,8 @@ def validate(raw, require_url=False):
         result['board_url'] = board_url(result['board_url'])
     elif require_url or flag(result['basic_auto_start']):
         raise Error('설정에서 게시판 주소를 저장하세요.')
-    for key in ('download_path', 'target_path'):
+    result['short_path'] = result.get('short_path') or str(Path(result['target_path']) / '단편')
+    for key in ('download_path', 'target_path', 'short_path'):
         value = str(result[key]).strip()
         if not value or not Path(value).is_absolute() or '\x00' in value:
             raise Error('다운로드·정리 경로는 FF 컨테이너 내부의 절대 경로로 입력하세요.')
@@ -134,6 +135,7 @@ def validate(raw, require_url=False):
 def organizer_config(config):
     return validate_organizer({
         'source_path': config['download_path'], 'target_path': config['target_path'],
+        'short_path': config.get('short_path', ''),
         'minimum': config['minimum'], 'bare_numbers': config['bare_numbers'],
         'excluded_titles': config['excluded_titles'],
         'basic_interval': config['organize_interval'], 'basic_auto_start': config['organize_auto'],

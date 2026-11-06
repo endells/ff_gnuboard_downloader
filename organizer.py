@@ -23,11 +23,12 @@ class Cancelled(OrganizerError):
     pass
 
 
-MISC_FOLDER = '_단편 및 미달'
+MISC_FOLDER = '단편'
+LEGACY_MISC_FOLDER = '_단편 및 미달'
 
 KST = datetime.timezone(datetime.timedelta(hours=9))
 DEFAULTS = {
-    'source_path': '', 'target_path': '', 'minimum': '3',
+    'source_path': '', 'target_path': '', 'short_path': '', 'minimum': '3',
     'bare_numbers': 'False', 'excluded_titles': '',
     'basic_interval': '60', 'basic_auto_start': 'False',
 }
@@ -47,7 +48,8 @@ def flag(value):
 
 def validate(raw):
     result = dict(DEFAULTS, **{k: v for k, v in raw.items() if k in DEFAULTS})
-    for key in ('source_path', 'target_path'):
+    result['short_path'] = result.get('short_path') or str(Path(result['target_path']) / MISC_FOLDER)
+    for key in ('source_path', 'target_path', 'short_path'):
         path = str(result[key]).strip()
         if not path or '\x00' in path or not Path(path).is_absolute():
             raise OrganizerError('원본·정리 경로는 FF 컨테이너 내부의 절대 경로로 입력하세요.')
@@ -55,6 +57,11 @@ def validate(raw):
     source, target = Path(result['source_path']), Path(result['target_path'])
     if source.resolve() == target.resolve():
         raise OrganizerError('원본 폴더와 정리 폴더를 서로 다르게 지정하세요.')
+    short = Path(result['short_path']).resolve()
+    if short in (source.resolve(), target.resolve()):
+        raise OrganizerError('단편 폴더는 원본·정리 결과 폴더와 다르게 지정하세요.')
+    if target.resolve() in short.parents and short.parent != target.resolve():
+        raise OrganizerError('단편 폴더는 정리 결과 바로 아래 또는 별도 경로로 지정하세요.')
     try:
         result['minimum'] = int(str(result['minimum']))
         result['basic_interval'] = int(str(result['basic_interval']))
@@ -218,7 +225,7 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
         group['eligible'] = group['count'] >= config['minimum'] and not group['excluded']
         group['folder'] = safe_component(group['title'])
         # 다른 제목이 파일시스템의 폴더명으로 충돌하는 경우 명시적인 구분자를 추가합니다.
-        if group['folder'] == MISC_FOLDER:
+        if group['folder'] in (MISC_FOLDER, LEGACY_MISC_FOLDER) or (Path(config['target_path']) / group['folder']).resolve() == Path(config['short_path']).resolve():
             group['folder'] += ' [작품]'
         folded = group['folder'].casefold()
         if folded in folder_keys and folder_keys[folded] != key:
@@ -241,13 +248,13 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
             output = styled_name(entry['name'], entry['original_title'], style, maximum)
             if output != entry['name'] or (style and entry['order'][0] == 0):
                 entry['output_name'] = output
-        group['category'] = '작품 폴더' if group['eligible'] else '단편·편수 미달'
+        group['category'] = '작품 폴더' if group['eligible'] else '단편'
         if not group['eligible']:
             group['folder'] = MISC_FOLDER
         rows.append(group)
     rows.sort(key=lambda x: (not x['eligible'], x['title']))
     return {'config': config, 'created': now(), 'source_real': str(source.resolve()),
-            'target_real': str(Path(config['target_path']).resolve()), 'scanned': scanned,
+            'target_real': str(Path(config['target_path']).resolve()), 'short_real': str(Path(config['short_path']).resolve()), 'scanned': scanned,
             'groups': rows, 'errors': errors}
 
 
@@ -466,6 +473,9 @@ class Engine:
                 source, target = Path(config['source_path']), Path(config['target_path'])
                 if str(source.resolve()) != plan['source_real'] or str(target.resolve()) != plan['target_real']:
                     raise OrganizerError('분석 후 폴더 경로가 변경되었습니다. 다시 미리보기 하세요.')
+                short = Path(config['short_path'])
+                if str(short.resolve()) != plan.get('short_real', str(short.resolve())) or short.is_symlink():
+                    raise OrganizerError('단편 폴더 경로가 변경되었거나 심볼릭 링크입니다. 다시 미리보기 하세요.')
                 if target.is_symlink():
                     raise OrganizerError('정리 경로에는 심볼릭 링크 대신 실제 경로를 입력하세요.')
                 selected = [g for g in plan['groups'] if not g['excluded'] and (keys is None or g['key'] in keys)]
@@ -475,12 +485,12 @@ class Engine:
                         check_cancel(cancel)
                         state['message'] = group['title'] + ' / ' + entry['name']
                         try:
-                            folder = target / group['folder']
-                            if folder.resolve().parent != target.resolve():
+                            folder = target / group['folder'] if group['eligible'] else short
+                            if group['eligible'] and folder.resolve().parent != target.resolve():
                                 raise OrganizerError('정리 폴더가 지정 경로를 벗어납니다.')
                             result = copy_entry(source, folder, entry, cancel)
                             if group['eligible']:
-                                misc = target / MISC_FOLDER
+                                misc = short
                                 if misc.is_dir() and not misc.is_symlink() and misc.resolve() != source.resolve():
                                     clean_identical_aliases(misc, Path(result['destination']),
                                         dict(entry, output_name=entry.get('output_name', entry['name'])),
@@ -537,7 +547,8 @@ class Engine:
                     path = Path(plan['config']['source_path']) / entry['name']
                     saved = db.execute('SELECT fingerprint,destination,dest_fingerprint FROM organized WHERE source=?', (str(path),)).fetchone()
                     try:
-                        if saved and signature(path) == json.loads(saved[0]) and signature(Path(saved[1])) == json.loads(saved[2]):
+                        expected_folder = Path(plan['config']['target_path']) / group['folder'] if group['eligible'] else Path(plan['config']['short_path'])
+                        if saved and Path(saved[1]).parent.resolve() == expected_folder.resolve() and signature(path) == json.loads(saved[0]) and signature(Path(saved[1])) == json.loads(saved[2]):
                             completed += 1
                     except (OSError, OrganizerError):
                         pass

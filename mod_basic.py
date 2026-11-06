@@ -40,6 +40,7 @@ class ModuleBasic(PluginModuleBase):
         root = Path(F.config['path_data']) / 'downloads' / 'gnuboard'
         result['download_path'] = result['download_path'] or str(root / 'inbox')
         result['target_path'] = result['target_path'] or str(root / 'sorted')
+        result['short_path'] = result['short_path'] or str(Path(result['target_path']) / '단편')
         return result
 
     def config(self):
@@ -156,12 +157,12 @@ class ModuleBasic(PluginModuleBase):
             return jsonify(ret='error', msg='페이지를 새로고침한 후 다시 시도하세요.'), 403
         try:
             if command == 'epub_folders':
-                return jsonify(ret='success', rows=epub_folders(self.raw_config()['target_path']))
+                return jsonify(ret='success', rows=epub_folders(self.raw_config()['target_path'], self.raw_config()['short_path']))
             if command == 'epub_start':
                 selected = None if arg1 == 'all' else json.loads(arg2 or '[]')
                 if arg1 not in ('all', 'selected'):
                     raise Error('EPUB 대상 선택이 올바르지 않습니다.')
-                self.epub.start(self.raw_config()['target_path'], selected)
+                self.epub.start(self.raw_config()['target_path'], selected, self.raw_config()['short_path'])
                 return jsonify(ret='success', msg='EPUB 생성을 시작했습니다.')
             if command == 'epub_stop':
                 self.epub.stop()

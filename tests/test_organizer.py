@@ -351,3 +351,28 @@ class Misc(unittest.TestCase):
         self.assertFalse((self.target / MISC_FOLDER / '제외.txt').exists())
         from ff_gnuboard_downloader.epub_export import folders
         self.assertEqual(folders(self.target), [])
+
+
+    def test_custom_short_path_and_promotion(self):
+        self.conf['short_path'] = str(self.root / '별도단편')
+        self.write('연재 -1편.txt')
+        engine = self.engine()
+        self.run_job(engine, 'scheduled')
+        short = Path(self.conf['short_path'])
+        self.assertTrue((short / '연재 -1편.txt').exists())
+        self.assertFalse((self.target / '단편').exists())
+        self.write('연재 -2편.txt')
+        self.write('연재 -3편.txt')
+        self.run_job(engine, 'scheduled')
+        self.assertFalse((short / '연재 -1편.txt').exists())
+        self.assertTrue((self.target / '연재' / '연재 -1편.txt').exists())
+
+    def test_short_path_validation_and_epub_exclusion(self):
+        from ff_gnuboard_downloader.epub_export import folders
+        for path in [self.source, self.target, self.target / '작품' / '단편', Path('relative')]:
+            with self.assertRaises(OrganizerError):
+                validate(dict(self.conf, short_path=str(path)))
+        short = self.target / '별도보관'
+        short.mkdir(parents=True)
+        (short / '시험.txt').write_text('시험')
+        self.assertEqual(folders(self.target, str(short)), [])

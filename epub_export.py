@@ -11,18 +11,18 @@ import uuid
 import zipfile
 from html import escape
 
-from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, MISC_FOLDER, preferred_style, styled_name
+from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, MISC_FOLDER, LEGACY_MISC_FOLDER, preferred_style, styled_name
 
 MARKER = 'META-INF/ff-gnuboard.json'
 
 
-def folders(root):
+def folders(root, short_path=None):
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
         raise OrganizerError('정리 결과 폴더가 없거나 심볼릭 링크입니다. 먼저 TXT를 정리하세요.')
     rows = []
     for folder in sorted(root.iterdir(), key=lambda p: p.name.casefold()):
-        if folder.name == MISC_FOLDER or folder.name.startswith('.') or folder.is_symlink() or not folder.is_dir():
+        if folder.name in (MISC_FOLDER, LEGACY_MISC_FOLDER) or (short_path and folder.resolve() == Path(short_path).resolve()) or folder.name.startswith('.') or folder.is_symlink() or not folder.is_dir():
             continue
         count = len(txt_files(folder))
         if count:
@@ -53,7 +53,7 @@ def decode(raw):
 
 def build(root, name, cancel=lambda: False):
     root = Path(root).resolve()
-    if not isinstance(name, str) or name in ('.', '..', MISC_FOLDER) or Path(name).name != name or '/' in name or '\\' in name:
+    if not isinstance(name, str) or name in ('.', '..', MISC_FOLDER, LEGACY_MISC_FOLDER) or Path(name).name != name or '/' in name or '\\' in name:
         raise OrganizerError('정리 폴더 바로 아래의 작품 폴더만 선택할 수 있습니다.')
     folder = root / name
     if folder.is_symlink() or not folder.is_dir() or folder.resolve().parent != root:
@@ -142,14 +142,14 @@ class Engine(Store):
         if self.get('state') is None:
             self.put('state', {'status': 'idle', 'message': '정리된 작품 폴더에서 EPUB을 생성합니다.', 'results': []})
 
-    def start(self, root, selected=None):
+    def start(self, root, selected=None, short_path=None):
         if selected is not None and (not isinstance(selected, list) or not selected or not all(isinstance(n, str) for n in selected)):
             raise OrganizerError('EPUB을 만들 작품 폴더를 선택하세요.')
         handle = self.acquire()
         if handle is None:
             raise OrganizerError('다운로드·정리·EPUB 작업이 실행 중입니다. 완료 후 다시 실행하세요.')
         try:
-            available = [row['name'] for row in folders(root)]
+            available = [row['name'] for row in folders(root, short_path)]
             if selected is not None and not set(selected) <= set(available):
                 raise OrganizerError('선택 폴더가 변경되었습니다. 목록을 새로고침하세요.')
             names = available if selected is None else [n for n in available if n in selected]

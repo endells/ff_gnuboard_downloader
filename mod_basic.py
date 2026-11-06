@@ -12,6 +12,7 @@ from plugin import PluginModuleBase
 from .core import DEFAULTS, Engine, Error, board_key, fingerprint, organizer_config, validate
 from .organizer import Engine as Organizer
 from .folders import list_folders
+from .epub_export import Engine as EpubEngine, folders as epub_folders
 
 
 class ModuleBasic(PluginModuleBase):
@@ -22,7 +23,8 @@ class ModuleBasic(PluginModuleBase):
         root = Path(F.config['path_data']) / 'db'
         self.engine = Engine(root / 'ff_gnuboard_download.db')
         self.organizer = Organizer(root / 'ff_gnuboard_organize.db')
-        self.engine.lock_path = self.organizer.lock_path = root / 'ff_gnuboard_job.lock'
+        self.epub = EpubEngine(root / 'ff_gnuboard_epub.db')
+        self.engine.lock_path = self.organizer.lock_path = self.epub.lock_path = root / 'ff_gnuboard_job.lock'
         self.organizer.title_lookup = self.title_lookup
         self.cookie_path = root / 'ff_gnuboard_cookie.json'
         self.settings_lock = threading.RLock()
@@ -52,6 +54,7 @@ class ModuleBasic(PluginModuleBase):
             self.P.logger.warning('그누보드 설정 확인: %s', exc)
 
     def plugin_unload(self):
+        self.epub.stop()
         self.engine.pause()
         self.organizer.stop()
         for suffix in ('', '_organize'):
@@ -152,6 +155,17 @@ class ModuleBasic(PluginModuleBase):
         if req.method != 'POST' or not expected or not secrets.compare_digest(expected, given):
             return jsonify(ret='error', msg='페이지를 새로고침한 후 다시 시도하세요.'), 403
         try:
+            if command == 'epub_folders':
+                return jsonify(ret='success', rows=epub_folders(self.raw_config()['target_path']))
+            if command == 'epub_start':
+                selected = None if arg1 == 'all' else json.loads(arg2 or '[]')
+                if arg1 not in ('all', 'selected'):
+                    raise Error('EPUB 대상 선택이 올바르지 않습니다.')
+                self.epub.start(self.raw_config()['target_path'], selected)
+                return jsonify(ret='success', msg='EPUB 생성을 시작했습니다.')
+            if command == 'epub_stop':
+                self.epub.stop()
+                return jsonify(ret='success', msg='EPUB 생성 중지를 요청했습니다.')
             if command == 'folders':
                 return jsonify(ret='success', **list_folders(arg1, arg2 or 1, arg3 == 'nearest'))
             if command == 'save_download_path':
@@ -172,6 +186,7 @@ class ModuleBasic(PluginModuleBase):
                 return jsonify(ret='success', msg='설정을 저장했습니다. 다음 작업부터 적용됩니다.')
             if command == 'status':
                 return jsonify(ret='success', state=self.engine.snapshot(), organize=self.organizer.snapshot(),
+                    epub=self.epub.snapshot(),
                     schedule=F.scheduler.is_include(self.get_scheduler_name()),
                     organize_schedule=F.scheduler.is_include(self.get_scheduler_name() + '_organize'),
                     schedule_message=self.engine.get('schedule_message', ''),

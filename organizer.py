@@ -71,6 +71,10 @@ def validate(raw):
 def title_parts(stem, bare_numbers=False):
     """경계가 명확한 끝 회차만 제거. '천하', '1984' 같은 본제목은 보존."""
     title = normalized(stem)
+    # 이미 번호를 붙인 마지막편도 같은 작품의 마지막 회차로 인식합니다.
+    terminal = re.fullmatch(r'(.+?)\s*[-_:–—]\s*\d+\s*(?:화|회|편)\s*[-_:–—]\s*마지막\s*편', title)
+    if terminal:
+        return terminal[1].strip(), 'last', [2, 0]
     title = re.sub(r' \[(?:글-\d+(?:-[0-9a-f]+)?|[0-9a-f]{10})\]$', '', title)
     # 완결 표시는 회차 판별 전에 제거하되, 분명한 구분자가 있을 때만 적용합니다.
     title = re.sub(r'(?:\s*[\[(](?:완결|완|끝)[\])]|\s+[-–—]?\s*(?:완결|마침))$', '', title).strip()
@@ -101,6 +105,14 @@ def title_parts(stem, bare_numbers=False):
             episode_key, order = 'last', [2, 0]
         return base, episode_key, order
     return title or normalized(stem), 'unnumbered', [3, 0]
+
+
+def last_episode_name(name, maximum):
+    stem = Path(name).stem
+    if not maximum or not re.search(r'마지막\s*편$', stem):
+        return name
+    base = title_parts(stem, True)[0]
+    return base.rstrip(' -_:–—') + ' - ' + str(maximum + 1) + '편 - 마지막편' + Path(name).suffix
 
 
 def safe_component(value, limit=180):
@@ -174,6 +186,17 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
         if folded in folder_keys and folder_keys[folded] != key:
             group['folder'] += ' [' + hashlib.sha256(key.encode()).hexdigest()[:12] + ']'
         folder_keys[group['folder'].casefold()] = key
+        maximum = max((f['order'][1] for f in group['files'] if f['order'][0] == 0), default=0)
+        existing = Path(config['target_path']) / group['folder']
+        if existing.is_dir() and not existing.is_symlink():
+            for child in existing.iterdir():
+                if child.suffix.lower() == '.txt' and child.is_file() and not child.is_symlink():
+                    base, _, order = title_parts(child.stem, True)
+                    if normalized(base).casefold() == key and order[0] == 0:
+                        maximum = max(maximum, order[1])
+        for entry in group['files']:
+            if entry['episode'] == 'last' and maximum:
+                entry['output_name'] = last_episode_name(entry['name'], maximum)
         rows.append(group)
     rows.sort(key=lambda x: (not x['eligible'], x['title']))
     return {'config': config, 'created': now(), 'source_real': str(source.resolve()),
@@ -227,7 +250,7 @@ def copy_entry(source, folder, entry, cancel=None):
         if signature(source_file) != entry['signature']:
             raise OrganizerError('복사 도중 원본이 변경되어 이번 복사를 취소했습니다.')
         checksum = digest.hexdigest()
-        name = safe_component(Path(entry['name']).stem, 160) + '.txt'
+        name = safe_component(Path(entry.get('output_name', entry['name'])).stem, 160) + '.txt'
         destination = folder / name
         for attempt in range(3):
             check_cancel(cancel)
@@ -431,7 +454,7 @@ class Engine:
         for group in plan['groups'][start:start + 50]:
             item = {k: copy.deepcopy(v) for k, v in group.items() if k != 'files'}
             item['file_count'] = len(group['files'])
-            item['sample'] = [f['name'] for f in group['files'][:5]]
+            item['sample'] = [f.get('output_name', f['name']) for f in group['files'][:5]]
             rows.append(item)
         return {'rows': rows, 'page': page, 'more': start + 50 < len(plan['groups']), 'ready': True,
                 'created': plan['created'], 'scanned': plan['scanned'], 'total_groups': len(plan['groups']),

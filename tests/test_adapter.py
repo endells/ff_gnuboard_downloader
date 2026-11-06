@@ -105,7 +105,7 @@ class Adapter(unittest.TestCase):
                          download_path=str(self.source), target_path=str(self.root / 'sorted'))
 
     def tearDown(self):
-        for engine in (self.module.engine, self.module.organizer):
+        for engine in (self.module.engine, self.module.organizer, self.module.epub):
             if engine.thread:
                 engine.thread.join(5)
         self.temp.cleanup()
@@ -117,6 +117,23 @@ class Adapter(unittest.TestCase):
         if arg2 is not None:
             args['arg2'] = str(arg2)
         return self.client.post('/ff_gnuboard_downloader/ajax/basic/command', data=args)
+
+    def test_epub_commands_scope_and_validation(self):
+        self.post('save', self.conf)
+        folder = self.root / 'sorted' / '시험작품'
+        folder.mkdir(parents=True)
+        (folder / '시험작품 1편.txt').write_text('합성 시험', encoding='utf-8')
+        rows = self.post('epub_folders').get_json()['rows']
+        self.assertEqual(rows, [{'name': '시험작품', 'count': 1}])
+        self.assertEqual(self.post('epub_start', 'selected', '[]').get_json()['ret'], 'error')
+        self.assertEqual(self.post('epub_start', 'selected', '["../escape"]').get_json()['ret'], 'error')
+        self.assertEqual(self.post('epub_start', 'all').get_json()['ret'], 'success')
+        self.module.epub.thread.join(5)
+        state = self.post('status').get_json()['epub']
+        self.assertEqual(state['status'], 'completed')
+        self.assertTrue((folder / '시험작품.epub').is_file())
+        response = self.client.post('/ff_gnuboard_downloader/ajax/basic/command', data={'command': 'epub_start', 'arg1': 'all'})
+        self.assertEqual(response.status_code, 403)
 
     def test_all_tabs_initial_empty_config(self):
         with self.app.app_context():

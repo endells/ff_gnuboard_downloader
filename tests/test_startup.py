@@ -86,7 +86,7 @@ class Startup(unittest.TestCase):
     def test_normal_setup_preserves_metadata_menu_and_delegate(self):
         _, p, module, calls = self.load()
         self.assertEqual(p.plugin_info['title'], '그누보드 TXT 다운로더')
-        self.assertEqual(p.plugin_info['version'], '0.1.5')
+        self.assertEqual(p.plugin_info['version'], '0.1.6')
         self.assertEqual(p.plugin_info['startup_status'], 'ready')
         self.assertEqual(len(p.setting['menu']['list']), 4)
         self.assertEqual(module.process_menu('download', None), '정상 화면')

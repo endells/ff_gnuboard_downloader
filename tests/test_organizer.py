@@ -120,7 +120,8 @@ class Files(unittest.TestCase):
         state = self.run_job(engine, 'copy', ['별빛'])
         self.assertEqual((state['copied'], state['failed']), (3, 0))
         self.assertEqual(before, {f.name: f.read_bytes() for f in self.source.iterdir()})
-        self.assertEqual(before, {f.name: f.read_bytes() for f in (self.target / '별빛').iterdir()})
+        self.assertEqual(sorted(before.values()), sorted(f.read_bytes() for f in (self.target / '별빛').iterdir()))
+        self.assertEqual({f.name for f in (self.target / '별빛').iterdir()}, {'별빛 1화.txt', '별빛 2화.txt', '별빛 3화.txt'})
         self.assertEqual((self.target / '별빛' / '별빛 1화.txt').stat().st_mode & 0o777, 0o640)
         self.assertEqual(self.run_job(engine, 'copy', ['별빛'])['skipped'], 3)
 
@@ -256,3 +257,57 @@ class Files(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Styles(unittest.TestCase):
+    setUp = Files.setUp
+    tearDown = Files.tearDown
+    write = Files.write
+    engine = Files.engine
+    run_job = Files.run_job
+    def test_majority_spacing_unit_and_final(self):
+        for n in [1, 2, 3]:
+            self.write('나는 관사병이었다 -%s부.txt' % n)
+        self.write('나는 관사병이었다 - 4 편.txt')
+        self.write('나는 관사병이었다 - 마지막편.txt')
+        engine = self.engine()
+        self.run_job(engine, 'scheduled')
+        folder = self.target / '나는 관사병이었다'
+        self.assertEqual({p.name for p in folder.iterdir()}, {
+            '나는 관사병이었다 -1부.txt', '나는 관사병이었다 -2부.txt',
+            '나는 관사병이었다 -3부.txt', '나는 관사병이었다 -4부.txt',
+            '나는 관사병이었다 -5부 -마지막부.txt'})
+        self.assertEqual(self.run_job(engine, 'scheduled')['skipped'], 5)
+        self.assertEqual(title_parts('나는 관사병이었다 -5부 -마지막부')[:2], ('나는 관사병이었다', 'last'))
+        self.assertTrue((self.source / '나는 관사병이었다 - 마지막편.txt').exists())
+
+    def test_existing_identical_alias_normalized_without_losing_other_content(self):
+        for n in [1, 2, 3]:
+            self.write('여행 - %s 부.txt' % n)
+        self.write('여행 -4편.txt', b'same')
+        folder = self.target / '여행'
+        folder.mkdir(parents=True)
+        (folder / '여행 -4편.txt').write_bytes(b'same')
+        (folder / '여행 - 4편.txt').write_bytes(b'different')
+        self.run_job(self.engine(), 'scheduled')
+        self.assertFalse((folder / '여행 -4편.txt').exists())
+        self.assertEqual((folder / '여행 - 4 부.txt').read_bytes(), b'same')
+        self.assertEqual((folder / '여행 - 4편.txt').read_bytes(), b'different')
+
+    def test_style_votes_do_not_double_count_copies(self):
+        from ff_gnuboard_downloader.organizer import preferred_style, styled_name
+        self.assertEqual(preferred_style(['여행 -1부', '여행 -2부', '여행 - 3편'] * 2), (' -', '부', 0))
+        for before, after in [(' -', '편'), (' - ', '편'), (' -', '부'), (' -', ' 부'), (' ', '화')]:
+            style = preferred_style(['여행' + before + '21' + after])
+            name = styled_name('여행 마지막부.txt', '여행 마지막부', style, 21)
+            self.assertTrue(name.startswith('여행' + before + '22' + after))
+            self.assertEqual(title_parts(Path(name).stem)[:2], ('여행', 'last'))
+        self.assertEqual(preferred_style(['여행 -2편', '여행 - 1부']), (' - ', '부', 0))
+
+
+    def test_original_folder_cannot_be_used_as_work_destination(self):
+        self.write('여행 -1부.txt')
+        entry = scan(dict(self.conf, minimum=1))['groups'][0]['files'][0]
+        with self.assertRaises(OrganizerError):
+            copy_entry(self.source, self.source, entry)
+        self.assertTrue((self.source / '여행 -1부.txt').exists())

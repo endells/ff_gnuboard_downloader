@@ -108,3 +108,14 @@ class Epub(unittest.TestCase):
         (source / '새작품 - 마지막 편.txt').write_text('시험')
         new = next(g for g in scan(config)['groups'] if g['title'] == '새작품')
         self.assertNotIn('output_name', new['files'][0])
+
+
+    def test_majority_style_and_last_part_in_epub(self):
+        folder = self.root / '여행'
+        folder.mkdir()
+        for name in ['여행 -1 부', '여행 -2 부', '여행 - 3편', '여행 - 마지막부']:
+            (folder / (name + '.txt')).write_text('합성 ' + name, encoding='utf-8')
+        with zipfile.ZipFile(build(self.root, '여행')['path']) as z:
+            nav = ET.fromstring(z.read('OEBPS/nav.xhtml'))
+            self.assertEqual([e.text for e in nav.iter('{http://www.w3.org/1999/xhtml}a')],
+                             ['여행 -1 부', '여행 -2 부', '여행 -3 부', '여행 -4 부 -마지막 부'])

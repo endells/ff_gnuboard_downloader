@@ -11,7 +11,7 @@ import uuid
 import zipfile
 from html import escape
 
-from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, last_episode_name
+from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, preferred_style, styled_name
 
 MARKER = 'META-INF/ff-gnuboard.json'
 
@@ -63,6 +63,7 @@ def build(root, name, cancel=lambda: False):
         raise OrganizerError('TXT 파일이 없습니다.')
     stamps = {p.name: signature(p) for p in files}
     maximum = max((title_parts(p.stem, True)[2][1] for p in files if title_parts(p.stem, True)[2][0] == 0), default=0)
+    style = preferred_style([p.stem for p in files])
     output = folder / (safe_component(name, 150) + '.epub')
     previous = None
     output_stamp = None
@@ -79,7 +80,7 @@ def build(root, name, cancel=lambda: False):
             raise OrganizerError('같은 이름의 외부 EPUB이 있어 덮어쓰지 않습니다: ' + output.name)
     fd, temp = tempfile.mkstemp(prefix='.epub-', dir=str(folder))
     os.close(fd)
-    digest = hashlib.sha256()
+    digest = hashlib.sha256(b"chapter-format-v2")
     try:
         with zipfile.ZipFile(temp, 'w', compression=zipfile.ZIP_DEFLATED) as z:
             z.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
@@ -96,8 +97,8 @@ def build(root, name, cancel=lambda: False):
                     raise OrganizerError('TXT가 변경되었습니다. 다시 생성하세요.')
                 digest.update(json.dumps([path.name, hashlib.sha256(raw).hexdigest()], ensure_ascii=False).encode())
                 text = decode(raw).replace('\r\n', '\n').replace('\r', '\n')
-                chapter_title = Path(last_episode_name(path.name, maximum)).stem
-                terminal = title_parts(path.stem, True)[1] == 'last'
+                chapter_title = Path(styled_name(path.name, path.stem, style, maximum)).stem
+                terminal = title_parts(path.stem, True)[1] != 'unnumbered'
                 terminal_key = (chapter_title, hashlib.sha256(raw).hexdigest())
                 if terminal and terminal_key in seen_terminal:
                     continue

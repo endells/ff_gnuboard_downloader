@@ -72,17 +72,17 @@ def title_parts(stem, bare_numbers=False):
     """경계가 명확한 끝 회차만 제거. '천하', '1984' 같은 본제목은 보존."""
     title = normalized(stem)
     # 이미 번호를 붙인 마지막편도 같은 작품의 마지막 회차로 인식합니다.
-    terminal = re.fullmatch(r'(.+?)\s*[-_:–—]\s*\d+\s*(?:화|회|편)\s*[-_:–—]\s*마지막\s*편', title)
+    terminal = re.fullmatch(r'(.+?)\s*[-_:–—]?\s*(?:제\s*)?\d+\s*(?:화|회|편|부|장)\s*[-_:–—]\s*마지막\s*(?:편|부|화|회|장)', title)
     if terminal:
         return terminal[1].strip(), 'last', [2, 0]
     title = re.sub(r' \[(?:글-\d+(?:-[0-9a-f]+)?|[0-9a-f]{10})\]$', '', title)
     # 완결 표시는 회차 판별 전에 제거하되, 분명한 구분자가 있을 때만 적용합니다.
     title = re.sub(r'(?:\s*[\[(](?:완결|완|끝)[\])]|\s+[-–—]?\s*(?:완결|마침))$', '', title).strip()
-    label = r'(?:제\s*\d+\s*(?:화|회|편|부|장)|\d+\s*(?:화|회|편|부|장)|[상중하](?:편)?|마지막\s*편)'
+    label = r'(?:제\s*\d+\s*(?:화|회|편|부|장)|\d+\s*(?:화|회|편|부|장)|[상중하](?:편)?|마지막\s*(?:편|부|화|회|장))'
     patterns = [
         r'^(?P<title>.+?)\s*[\[(]\s*(?P<episode>' + label + r'|\d+)\s*[\])]$',
         r'^(?P<title>.+?)\s*[-_:–—]?\s*(?P<episode>(?:제\s*)?\d+\s*(?:화|회|편|부|장))$',
-        r'^(?P<title>.+?)(?:\s+|\s*[-_:–—]\s*)(?P<episode>[상중하](?:편)?|마지막\s*편)$',
+        r'^(?P<title>.+?)(?:\s+|\s*[-_:–—]\s*)(?P<episode>[상중하](?:편)?|마지막\s*(?:편|부|화|회|장))$',
     ]
     if bare_numbers:
         patterns.append(r'^(?P<title>.+?)(?:\s+|\s*[-_:–—]\s*)(?P<episode>\d+)$')
@@ -107,12 +107,46 @@ def title_parts(stem, bare_numbers=False):
     return title or normalized(stem), 'unnumbered', [3, 0]
 
 
-def last_episode_name(name, maximum):
-    stem = Path(name).stem
-    if not maximum or not re.search(r'마지막\s*편$', stem):
+def preferred_style(titles):
+    """숫자 회차별 한 표. 동률이면 가장 이른 회차의 표기를 선택합니다."""
+    votes = {}
+    for title in titles:
+        base, episode, order = title_parts(title, True)
+        if order[0] != 0:
+            continue
+        match = re.fullmatch(re.escape(base) + r'(?P<before>\s*[-_:–—]?\s*(?:제\s*)?)(?P<number>\d+)(?P<after>\s*[화회편부장])', title)
+        if not match:
+            continue
+        number = match['number']
+        style = (match['before'], match['after'], len(number) if number.startswith('0') and len(number) > 1 else 0)
+        votes.setdefault(style, set()).add(order[1])
+    if not votes:
+        return None
+    return min(votes, key=lambda style: (-len(votes[style]), min(votes[style]), style))
+
+
+def styled_name(name, title, style, maximum):
+    base, episode, order = title_parts(title, True)
+    if episode == 'last':
+        if not maximum:
+            return name
+        style = style or (' - ', '편', 0)
+        number = maximum + 1
+        separator = re.sub(r'제\s*$', '', style[0])
+        separator = separator if re.search(r'[-_:–—]', separator) else ' - '
+        ending = separator + '마지막' + style[1]  # 단위 앞 띄어쓰기도 작품 표기와 맞춤
+    elif order[0] == 0 and style:
+        number, ending = order[1], ''
+    else:
         return name
-    base = title_parts(stem, True)[0]
-    return base.rstrip(' -_:–—') + ' - ' + str(maximum + 1) + '편 - 마지막편' + Path(name).suffix
+    before, after, width = style
+    return base + before + str(number).zfill(width) + after + ending + Path(name).suffix
+
+
+def last_episode_name(name, maximum):
+    if title_parts(Path(name).stem, True)[1] != 'last':
+        return name
+    return styled_name(name, Path(name).stem, None, maximum)
 
 
 def safe_component(value, limit=180):
@@ -166,7 +200,7 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
                 # NFC와 대소문자만 다른 파일명도 항상 동일한 폴더명을 사용합니다.
                 if title < group['title']:
                     group['title'] = title
-                group['files'].append({'name': entry.name, 'episode': episode, 'order': order, 'signature': fingerprint})
+                group['files'].append({'name': entry.name, 'original_title': original_title, 'episode': episode, 'order': order, 'signature': fingerprint})
                 scanned += 1
                 if progress and scanned % 250 == 0:
                     progress(scanned)
@@ -187,16 +221,22 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
             group['folder'] += ' [' + hashlib.sha256(key.encode()).hexdigest()[:12] + ']'
         folder_keys[group['folder'].casefold()] = key
         maximum = max((f['order'][1] for f in group['files'] if f['order'][0] == 0), default=0)
+        style_titles = [f['original_title'] for f in group['files']]
+        source_episodes = {f['episode'] for f in group['files']}
         existing = Path(config['target_path']) / group['folder']
         if existing.is_dir() and not existing.is_symlink():
             for child in existing.iterdir():
                 if child.suffix.lower() == '.txt' and child.is_file() and not child.is_symlink():
-                    base, _, order = title_parts(child.stem, True)
+                    base, existing_episode, order = title_parts(child.stem, True)
                     if normalized(base).casefold() == key and order[0] == 0:
                         maximum = max(maximum, order[1])
+                        if existing_episode not in source_episodes:
+                            style_titles.append(child.stem)
+        style = preferred_style(style_titles)
         for entry in group['files']:
-            if entry['episode'] == 'last' and maximum:
-                entry['output_name'] = last_episode_name(entry['name'], maximum)
+            output = styled_name(entry['name'], entry['original_title'], style, maximum)
+            if output != entry['name'] or (style and entry['order'][0] == 0):
+                entry['output_name'] = output
         rows.append(group)
     rows.sort(key=lambda x: (not x['eligible'], x['title']))
     return {'config': config, 'created': now(), 'source_real': str(source.resolve()),
@@ -219,8 +259,25 @@ def file_digest(path, cancel=None):
             digest.update(block)
 
 
+def clean_identical_aliases(folder, destination, entry, checksum, cancel):
+    if 'output_name' not in entry:
+        return
+    wanted = title_parts(entry.get('original_title', Path(entry['name']).stem), True)[:2]
+    for old in folder.iterdir():
+        if old == destination or old.is_symlink() or not old.is_file() or old.suffix.lower() != '.txt':
+            continue
+        if title_parts(old.stem, True)[:2] != wanted:
+            continue
+        before = signature(old)
+        if file_digest(old, cancel) == checksum and signature(old) == before:
+            check_cancel(cancel)
+            old.unlink()
+
+
 def copy_entry(source, folder, entry, cancel=None):
     """완성된 임시 파일만 공개하며 기존 목적지는 절대 덮어쓰지 않습니다."""
+    if source.resolve() == folder.resolve():
+        raise OrganizerError('작품 정리 폴더가 원본 폴더와 같습니다. 다른 정리 경로를 지정하세요.')
     source_file = source / entry['name']
     if signature(source_file) != entry['signature']:
         raise OrganizerError('분석 후 원본이 변경되었습니다. 다시 미리보기 하세요.')
@@ -257,11 +314,13 @@ def copy_entry(source, folder, entry, cancel=None):
             try:
                 # 같은 파일시스템에서의 하드링크로 원자적·덮어쓰기 없는 최종화를 수행합니다.
                 os.link(str(temp_path), str(destination))
+                clean_identical_aliases(folder, destination, entry, checksum, cancel)
                 return {'status': 'copied', 'destination': str(destination)}
             except FileExistsError:
                 if destination.is_symlink():
                     raise OrganizerError('목적지에 심볼릭 링크가 있어 복사하지 않았습니다.')
                 if destination.is_file() and file_digest(destination, cancel) == checksum:
+                    clean_identical_aliases(folder, destination, entry, checksum, cancel)
                     return {'status': 'skipped', 'destination': str(destination)}
                 if attempt == 0:
                     destination = folder / (Path(name).stem + ' [다른내용-' + checksum[:12] + '].txt')

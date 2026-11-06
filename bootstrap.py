@@ -16,7 +16,7 @@ class ModuleBootstrap(PluginModuleBase):
         self.error = None
         self.missing = None
         try:
-            # requests/bs4/soupsieve/fcntl 오류가 setup.py import 전체를 중단하지 않도록 격리합니다.
+            # requests/bs4/fcntl 오류가 setup.py import 전체를 중단하지 않도록 격리합니다.
             from .mod_basic import ModuleBasic
             self.delegate = ModuleBasic(P)
             self.db_default = self.delegate.db_default

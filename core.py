@@ -12,8 +12,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
-import soupsieve
 from bs4 import BeautifulSoup, Comment
+
+from .html_select import SelectorError, select, select_one, validate_selector
 
 from .organizer import (Engine as Store, OrganizerError, Cancelled, file_digest,
                         flag, normalized, now, safe_component, validate as validate_organizer)
@@ -116,7 +117,9 @@ def validate(raw, require_url=False):
         try:
             if not value or len(value) > 2000:
                 raise ValueError()
-            soupsieve.compile(value)
+            validate_selector(value)
+        except SelectorError as exc:
+            raise Error(key + ': ' + str(exc))
         except Exception:
             raise Error(key + ': CSS 선택자 형식이 올바르지 않습니다.')
         result[key] = value
@@ -142,20 +145,20 @@ def fingerprint(config):
 
 def cleaned_title(node):
     node = BeautifulSoup(str(node), 'html.parser')
-    for unwanted in node.select('.wr-icon, .cnt_cmt, .sound_only, .sr-only, script, style, [hidden]'):
+    for unwanted in select(node, '.wr-icon, .cnt_cmt, .sound_only, .sr-only, script, style, [hidden]'):
         unwanted.decompose()
     return normalized(node.get_text(' ', strip=True))
 
 
 def parse_list(html, base, config, requested_page):
     soup = BeautifulSoup(html, 'html.parser')
-    active = soup.select_one('.pagination .active, .pg_current')
+    active = select_one(soup, '.pagination .active, .pg_current')
     if active:
         digits = re.search(r'\d+', active.get_text(' ', strip=True))
         if digits and int(digits[0]) != requested_page:
             raise Fatal('요청한 페이지와 응답의 현재 페이지가 다릅니다. 반복 수집을 중단했습니다.')
     rows, seen = [], set()
-    for node in soup.select(config['list_selector']):
+    for node in select(soup, config['list_selector']):
         link = matching_link(base, node.get('href', ''), article=True)
         if not link:
             continue
@@ -166,20 +169,20 @@ def parse_list(html, base, config, requested_page):
         seen.add(pid)
         # 공지글은 오래된 글이어도 모든 페이지에 반복되므로 수집 대상에서 제외합니다.
         parent = node.find_parent(['li', 'tr'])
-        notice = bool(parent and (parent.select_one('.bo_notice, .notice_icon, .wr-notice') or
+        notice = bool(parent and (select_one(parent, '.bo_notice, .notice_icon, .wr-notice') or
                       'bo_notice' in parent.get('class', []) or
-                      any(x.get_text(strip=True) == '공지' for x in parent.select('.wr-num, .td_num'))))
+                      any(x.get_text(strip=True) == '공지' for x in select(parent, '.wr-num, .td_num'))))
         if not notice:
             rows.append({'id': pid, 'title': title, 'url': link})
     pages = [requested_page]
-    for node in soup.select('.pagination a[href], .pg_wrap a[href], .list-page a[href]'):
+    for node in select(soup, '.pagination a[href], .pg_wrap a[href], .list-page a[href]'):
         link = matching_link(base, node['href'])
         if link:
             page = parse_qs(urlsplit(link).query).get('page', [''])[0]
             if page.isdigit() and 1 <= int(page) <= 1000000:
                 pages.append(int(page))
     # 빈 목록과 로그인/차단/선택자 불일치를 구별합니다.
-    explicit_empty = bool(soup.select_one('.empty_table, .empty_list, .no-data, .list-none'))
+    explicit_empty = bool(select_one(soup, '.empty_table, .empty_list, .no-data, .list-none'))
     if not rows and not explicit_empty:
         raise Fatal('목록 글을 찾지 못했습니다. 로그인 상태 또는 목록 CSS 선택자를 확인하세요.')
     return {'rows': rows, 'last_page': max(pages), 'page': requested_page,
@@ -188,14 +191,14 @@ def parse_list(html, base, config, requested_page):
 
 def parse_article(html, config):
     soup = BeautifulSoup(html, 'html.parser')
-    title_node = soup.select_one(config['title_selector'])
-    body = soup.select_one(config['body_selector'])
+    title_node = select_one(soup, config['title_selector'])
+    body = select_one(soup, config['body_selector'])
     if title_node is None or body is None:
         raise Fatal('제목/본문 영역을 찾지 못했습니다. 로그인 상태 또는 CSS 선택자를 확인하세요.')
     title = cleaned_title(title_node)
-    for node in body.select('script, style, noscript, iframe, form, button, .sound_only, .sr-only, [hidden]'):
+    for node in select(body, 'script, style, noscript, iframe, form, button, .sound_only, .sr-only, [hidden]'):
         node.decompose()
-    for node in body.select('[style]'):
+    for node in select(body, '[style]'):
         if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden', node.get('style', ''), re.I):
             node.decompose()
     for node in body.find_all(string=lambda x: isinstance(x, Comment)):
@@ -219,7 +222,7 @@ class Client:
     def __init__(self, config, cookie='', check=None):
         self.config, self.check = config, check or (lambda: None)
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'FF-Gnuboard-TXT/0.1.0', 'Accept': 'text/html'})
+        self.session.headers.update({'User-Agent': 'FF-Gnuboard-TXT/0.1.2', 'Accept': 'text/html'})
         if cookie:
             self.session.headers['Cookie'] = cookie
         self.last_request = 0.0

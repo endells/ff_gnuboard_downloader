@@ -23,6 +23,8 @@ class Cancelled(OrganizerError):
     pass
 
 
+MISC_FOLDER = '_단편 및 미달'
+
 KST = datetime.timezone(datetime.timedelta(hours=9))
 DEFAULTS = {
     'source_path': '', 'target_path': '', 'minimum': '3',
@@ -216,6 +218,8 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
         group['eligible'] = group['count'] >= config['minimum'] and not group['excluded']
         group['folder'] = safe_component(group['title'])
         # 다른 제목이 파일시스템의 폴더명으로 충돌하는 경우 명시적인 구분자를 추가합니다.
+        if group['folder'] == MISC_FOLDER:
+            group['folder'] += ' [작품]'
         folded = group['folder'].casefold()
         if folded in folder_keys and folder_keys[folded] != key:
             group['folder'] += ' [' + hashlib.sha256(key.encode()).hexdigest()[:12] + ']'
@@ -237,6 +241,9 @@ def scan(config, cancel=None, progress=None, title_lookup=None):
             output = styled_name(entry['name'], entry['original_title'], style, maximum)
             if output != entry['name'] or (style and entry['order'][0] == 0):
                 entry['output_name'] = output
+        group['category'] = '작품 폴더' if group['eligible'] else '단편·편수 미달'
+        if not group['eligible']:
+            group['folder'] = MISC_FOLDER
         rows.append(group)
     rows.sort(key=lambda x: (not x['eligible'], x['title']))
     return {'config': config, 'created': now(), 'source_real': str(source.resolve()),
@@ -349,6 +356,7 @@ class Engine:
                     finished TEXT, mode TEXT, status TEXT, summary TEXT);
                 CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY, run_id INTEGER,
                     filename TEXT, title TEXT, status TEXT, destination TEXT, error TEXT);
+                CREATE TABLE IF NOT EXISTS organized (source TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, destination TEXT NOT NULL, dest_fingerprint TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS result_run ON results(run_id, id);
             ''')
 
@@ -416,9 +424,9 @@ class Engine:
                     raise OrganizerError('설정에 맞는 미리보기를 먼저 실행하세요.')
                 if not isinstance(keys, list) or not keys or not all(isinstance(k, str) for k in keys):
                     raise OrganizerError('복사할 제목을 선택하세요.')
-                eligible = {g['key'] for g in plan['groups'] if g['eligible']}
+                eligible = {g['key'] for g in plan['groups'] if not g['excluded']}
                 if not set(keys) <= eligible:
-                    raise OrganizerError('미리보기에서 기준을 충족한 제목만 선택할 수 있습니다.')
+                    raise OrganizerError('미리보기에서 제외되지 않은 제목만 선택할 수 있습니다.')
             self.put('state', {'status': 'running', 'mode': mode, 'message': '작업을 시작합니다.',
                                'processed': 0, 'total': 0, 'copied': 0, 'skipped': 0, 'failed': 0})
             self.thread = threading.Thread(target=self._work, args=(mode, config, keys, plan, handle), daemon=True)
@@ -460,7 +468,7 @@ class Engine:
                     raise OrganizerError('분석 후 폴더 경로가 변경되었습니다. 다시 미리보기 하세요.')
                 if target.is_symlink():
                     raise OrganizerError('정리 경로에는 심볼릭 링크 대신 실제 경로를 입력하세요.')
-                selected = [g for g in plan['groups'] if g['eligible'] and (keys is None or g['key'] in keys)]
+                selected = [g for g in plan['groups'] if not g['excluded'] and (keys is None or g['key'] in keys)]
                 state['total'] = sum(len(g['files']) for g in selected)
                 for group in selected:
                     for entry in group['files']:
@@ -471,6 +479,16 @@ class Engine:
                             if folder.resolve().parent != target.resolve():
                                 raise OrganizerError('정리 폴더가 지정 경로를 벗어납니다.')
                             result = copy_entry(source, folder, entry, cancel)
+                            if group['eligible']:
+                                misc = target / MISC_FOLDER
+                                if misc.is_dir() and not misc.is_symlink() and misc.resolve() != source.resolve():
+                                    clean_identical_aliases(misc, Path(result['destination']),
+                                        dict(entry, output_name=entry.get('output_name', entry['name'])),
+                                        file_digest(Path(result['destination']), cancel), cancel)
+                            with self.connect() as db:
+                                db.execute('INSERT OR REPLACE INTO organized VALUES (?,?,?,?)',
+                                    (str(source / entry['name']), json.dumps(entry['signature']), result['destination'],
+                                     json.dumps(signature(Path(result['destination'])))))
                             state[result['status']] += 1
                             self.add_result(run_id, entry['name'], group['title'], result['status'], result['destination'], '')
                         except Cancelled:
@@ -513,6 +531,17 @@ class Engine:
         for group in plan['groups'][start:start + 50]:
             item = {k: copy.deepcopy(v) for k, v in group.items() if k != 'files'}
             item['file_count'] = len(group['files'])
+            completed = 0
+            with self.connect() as db:
+                for entry in group['files']:
+                    path = Path(plan['config']['source_path']) / entry['name']
+                    saved = db.execute('SELECT fingerprint,destination,dest_fingerprint FROM organized WHERE source=?', (str(path),)).fetchone()
+                    try:
+                        if saved and signature(path) == json.loads(saved[0]) and signature(Path(saved[1])) == json.loads(saved[2]):
+                            completed += 1
+                    except (OSError, OrganizerError):
+                        pass
+            item['completed'] = completed
             item['sample'] = [f.get('output_name', f['name']) for f in group['files'][:5]]
             rows.append(item)
         return {'rows': rows, 'page': page, 'more': start + 50 < len(plan['groups']), 'ready': True,

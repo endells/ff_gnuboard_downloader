@@ -311,3 +311,43 @@ class Styles(unittest.TestCase):
         with self.assertRaises(OrganizerError):
             copy_entry(self.source, self.source, entry)
         self.assertTrue((self.source / '여행 -1부.txt').exists())
+
+
+class Misc(unittest.TestCase):
+    setUp = Files.setUp
+    tearDown = Files.tearDown
+    write = Files.write
+    engine = Files.engine
+    run_job = Files.run_job
+    def test_short_and_under_threshold_copied_then_promoted(self):
+        from ff_gnuboard_downloader.organizer import MISC_FOLDER
+        self.write('산책.txt', b'short')
+        self.write('연재 -1편.txt', b'one')
+        engine = self.engine()
+        self.run_job(engine, 'scheduled')
+        misc = self.target / MISC_FOLDER
+        self.assertEqual({p.name for p in misc.iterdir()}, {'산책.txt', '연재 -1편.txt'})
+        self.assertTrue(all(g['completed'] == g['file_count'] for g in engine.preview_page()['rows']))
+        self.assertEqual(self.run_job(engine, 'scheduled')['skipped'], 2)
+        self.write('연재 -2편.txt', b'two')
+        self.write('연재 -3편.txt', b'three')
+        self.run_job(engine, 'scheduled')
+        self.assertTrue((self.target / '연재' / '연재 -1편.txt').exists())
+        self.assertFalse((misc / '연재 -1편.txt').exists())
+        self.assertTrue((misc / '산책.txt').exists())
+        self.assertEqual(len(list(self.source.glob('*.txt'))), 4)
+        (misc / '산책.txt').unlink()
+        self.assertEqual(next(g for g in engine.preview_page()['rows'] if g['title'] == '산책')['completed'], 0)
+
+    def test_selected_short_and_excluded(self):
+        from ff_gnuboard_downloader.organizer import MISC_FOLDER
+        self.write('단편.txt')
+        self.write('제외.txt')
+        self.conf['excluded_titles'] = '제외'
+        engine = self.engine()
+        self.run_job(engine, 'preview')
+        self.run_job(engine, 'copy', ['단편'])
+        self.assertTrue((self.target / MISC_FOLDER / '단편.txt').exists())
+        self.assertFalse((self.target / MISC_FOLDER / '제외.txt').exists())
+        from ff_gnuboard_downloader.epub_export import folders
+        self.assertEqual(folders(self.target), [])

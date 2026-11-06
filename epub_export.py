@@ -11,7 +11,7 @@ import uuid
 import zipfile
 from html import escape
 
-from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, preferred_style, styled_name
+from .organizer import Engine as Store, OrganizerError, Cancelled, check_cancel, safe_component, signature, title_parts, MISC_FOLDER, preferred_style, styled_name
 
 MARKER = 'META-INF/ff-gnuboard.json'
 
@@ -22,7 +22,7 @@ def folders(root):
         raise OrganizerError('정리 결과 폴더가 없거나 심볼릭 링크입니다. 먼저 TXT를 정리하세요.')
     rows = []
     for folder in sorted(root.iterdir(), key=lambda p: p.name.casefold()):
-        if folder.name.startswith('.') or folder.is_symlink() or not folder.is_dir():
+        if folder.name == MISC_FOLDER or folder.name.startswith('.') or folder.is_symlink() or not folder.is_dir():
             continue
         count = len(txt_files(folder))
         if count:
@@ -53,7 +53,7 @@ def decode(raw):
 
 def build(root, name, cancel=lambda: False):
     root = Path(root).resolve()
-    if not isinstance(name, str) or name in ('.', '..') or Path(name).name != name or '/' in name or '\\' in name:
+    if not isinstance(name, str) or name in ('.', '..', MISC_FOLDER) or Path(name).name != name or '/' in name or '\\' in name:
         raise OrganizerError('정리 폴더 바로 아래의 작품 폴더만 선택할 수 있습니다.')
     folder = root / name
     if folder.is_symlink() or not folder.is_dir() or folder.resolve().parent != root:

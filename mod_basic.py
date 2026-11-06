@@ -11,6 +11,7 @@ from plugin import PluginModuleBase
 
 from .core import DEFAULTS, Engine, Error, board_key, fingerprint, organizer_config, validate
 from .organizer import Engine as Organizer
+from .folders import list_folders
 
 
 class ModuleBasic(PluginModuleBase):
@@ -142,6 +143,7 @@ class ModuleBasic(PluginModuleBase):
             session['gnuboard_csrf'] = secrets.token_urlsafe(32)
         return render_template('ff_gnuboard_downloader_basic.html', page=page,
             config=self.raw_config(), package_name=self.P.package_name,
+            data_path=str(F.config['path_data']),
             csrf_token=session['gnuboard_csrf'], cookie_saved=self.cookie_path.is_file())
 
     def process_command(self, command, arg1, arg2, arg3, req):
@@ -150,6 +152,14 @@ class ModuleBasic(PluginModuleBase):
         if req.method != 'POST' or not expected or not secrets.compare_digest(expected, given):
             return jsonify(ret='error', msg='페이지를 새로고침한 후 다시 시도하세요.'), 403
         try:
+            if command == 'folders':
+                return jsonify(ret='success', **list_folders(arg1, arg2 or 1, arg3 == 'nearest'))
+            if command == 'save_download_path':
+                with self.settings_lock:
+                    config = validate(dict(self.raw_config(), download_path=arg1 or ''))
+                    self.P.ModelSetting.set('download_path', config['download_path'])
+                return jsonify(ret='success', path=config['download_path'],
+                               msg='다운로드 폴더를 저장했습니다. 다음 작업부터 적용됩니다. 기존 파일은 이동하지 않습니다.')
             if command == 'save':
                 raw = json.loads(arg1 or '{}')
                 config = validate(raw)

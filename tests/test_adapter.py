@@ -126,6 +126,31 @@ class Adapter(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn('그누보드 TXT 다운로더'.encode(), response.data)
 
+    def test_folder_browse_and_save_download_path(self):
+        self.post('save', self.conf)
+        (self.source / '한글 폴더').mkdir()
+        (self.source / '문서.txt').write_text('본문')
+        result = self.post('folders', str(self.source)).json
+        self.assertEqual(result['ret'], 'success')
+        self.assertEqual([r['name'] for r in result['rows']], ['한글 폴더'])
+        before = dict(self.settings.values)
+        destination = str(self.source / '한글 폴더')
+        result = self.post('save_download_path', destination).json
+        self.assertEqual(result['ret'], 'success')
+        self.assertEqual(self.settings.values['download_path'], destination)
+        self.assertEqual(self.settings.values, dict(before, download_path=destination))
+        self.assertTrue((self.source / '문서.txt').is_file())
+        self.assertIsNone(self.module.engine.thread)
+        self.assertIn(destination.encode(), self.client.get('/ff_gnuboard_downloader/basic/download').data)
+
+    def test_invalid_folder_path_does_not_change_settings(self):
+        before = dict(self.settings.values)
+        self.assertEqual(self.post('save_download_path', 'relative').json['ret'], 'error')
+        self.assertEqual(before, self.settings.values)
+        self.assertEqual(self.post('folders', '/not-a-real-folder-qa').json['ret'], 'error')
+        response = self.client.post('/ff_gnuboard_downloader/ajax/basic/command', data={'command': 'folders', 'arg1': '/'})
+        self.assertEqual(response.status_code, 403)
+
     def test_csrf_required(self):
         response = self.client.post('/ff_gnuboard_downloader/ajax/basic/command', data={'command': 'save'})
         self.assertEqual(response.status_code, 403)

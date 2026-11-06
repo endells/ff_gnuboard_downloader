@@ -10,9 +10,12 @@
 .gb-note{padding:12px 16px;border-left:3px solid var(--blue);background:#11243e;margin:16px 0;color:#cbdef7}.gb-table{overflow:auto}.gb table{width:100%;min-width:620px;border-collapse:collapse;margin:8px 0;color:var(--text)}.gb td,.gb th{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}.gb th{font-size:12px;color:#a8c8ed;letter-spacing:.03em;background:#15253c}.gb td{font-size:13px}.gb code{color:#afdcff;background:#102139;padding:2px 5px;border-radius:3px}.gb summary{cursor:pointer;color:var(--blue)}.gb details{margin-top:12px}.gb pre{color:var(--muted);white-space:pre-wrap;margin:8px 0;background:transparent;font:12px/1.6 inherit}
 .gb-progress{height:6px;border-radius:5px;overflow:hidden;background:#0f1c2d;margin:12px 0}.gb-progress div{height:100%;background:#59a8f8;width:0;transition:width .2s}.gb-message{white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0 0;color:#a9d6ff;min-height:22px}.gb-message.error{color:#ffb0aa}.gb-number{font-size:11px;color:#9cb8db;letter-spacing:.08em;text-transform:uppercase}.gb-status{overflow-wrap:anywhere}.gb-divider{height:1px;background:var(--line);margin:20px 0}.gb [hidden]{display:none!important}
 @media(max-width:700px){.gb{margin:12px auto;padding:14px;border-radius:10px}.gb-card{padding:16px}.gb-grid,.gb-three{grid-template-columns:1fr;gap:0}.gb h2{font-size:22px}}
+.gb-path{display:flex;gap:8px;align-items:center}.gb-path input{flex:1;min-width:0}.gb-path button{flex:none}
+.gb dialog{width:min(720px,92vw);max-height:85vh;overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:22px}.gb dialog::backdrop{background:rgba(0,0,0,.65)}.gb-folder-list{display:grid;gap:6px;margin:16px 0;max-height:40vh;overflow:auto}.gb-folder-list button{text-align:left;white-space:normal;overflow-wrap:anywhere}.gb-folder-error{color:#ffb0aa;white-space:pre-wrap}
+@media(max-width:480px){.gb-path{flex-wrap:wrap}.gb-path input{flex-basis:100%}.gb dialog{padding:14px}}
 </style>
 <div class="gb">
- <div class="gb-top"><div><div class="gb-number">BOARD ARCHIVE · TXT ONLY</div><h2>그누보드 TXT 다운로더 <span class="gb-muted">v0.1.3</span></h2></div><span class="gb-tag" id="schedule">예약 확인 중</span></div>
+ <div class="gb-top"><div><div class="gb-number">BOARD ARCHIVE · TXT ONLY</div><h2>그누보드 TXT 다운로더 <span class="gb-muted">v0.1.4</span></h2></div><span class="gb-tag" id="schedule">예약 확인 중</span></div>
  <p class="gb-muted">플러그인 로딩 완료 · 다운로드와 정리 기능을 사용할 수 있습니다.</p>
  <p class="gb-muted">한 폴더에 모으고, 같은 제목의 연재물을 편수 기준으로 정리합니다.</p>
  <div class="gb-card">
@@ -24,7 +27,9 @@
  {% if page == 'download' %}
  <div class="gb-card">
   <div class="gb-number">01 · PAGE DOWNLOAD</div><h3>페이지 지정 다운로드</h3>
-  <div class="gb-muted">게시판: {{ config.board_url or '설정 / 스케줄에서 목록 주소를 먼저 저장하세요.' }}<br>저장 폴더: {{ config.download_path }}</div>
+  <div class="gb-muted">게시판: {{ config.board_url or '설정 / 스케줄에서 목록 주소를 먼저 저장하세요.' }}</div>
+  <label for="download_path">다운로드 저장 폴더</label><div class="gb-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button type="button" class="gb-btn" data-folder="download_path">폴더 선택</button><button type="button" class="gb-btn primary" id="save_download_path">경로 저장</button></div>
+  <p class="gb-muted">현재 저장 위치: <span id="saved_download_path">{{ config.download_path }}</span><br>폴더를 선택하거나 경로를 입력한 뒤 ‘경로 저장’을 누르세요. 기존 파일은 이동하지 않습니다.</p>
   <div class="gb-grid"><div><label for="start_page">시작 / 테스트 페이지</label><input type="number" id="start_page" min="1" max="1000000" value="1"></div><div><label for="end_page">끝 페이지</label><input type="number" id="end_page" min="1" max="1000000" value="1"></div></div>
   <div class="gb-actions"><button id="analyze" class="gb-btn" data-work>목록 분석</button><button id="single" class="gb-btn primary" data-work>한 페이지 받기</button><button id="range" class="gb-btn" data-work>지정 범위 받기</button><button id="until" class="gb-btn" data-work>시작 페이지부터 끝까지</button></div>
   <div class="gb-note">처음에는 <b>목록 분석 → 한 페이지 받기</b>로 TXT 저장을 확인하세요. 성공하면 범위·전체 수집을 사용할 수 있습니다. 페이지 간 {{ config.page_delay }}초, 개별 요청 간 최소 {{ config.request_delay }}초 대기합니다.</div>
@@ -47,9 +52,9 @@
  <div class="gb-card"><div class="gb-number">01 · SOURCE & FILES</div><h3>게시판과 저장 위치</h3>
   <label for="board_url">그누보드 목록 주소</label><input id="board_url" name="board_url" type="text" value="{{ config.board_url }}" placeholder="https://게시판주소/bbs/board.php?bo_table=게시판이름">
   <div class="gb-muted">bo_table이 포함된 목록 URL을 입력하세요. page·wr_id는 자동으로 분리합니다. 한 설정에서 한 게시판을 수집합니다.</div>
-  <label for="download_path">다운로드 폴더</label><input id="download_path" name="download_path" type="text" value="{{ config.download_path }}" required>
-  <label for="target_path">정리 결과 폴더</label><input id="target_path" name="target_path" type="text" value="{{ config.target_path }}" required>
-  <div class="gb-muted">FF 컨테이너에서 보이는 경로를 입력하세요. NAS 폴더를 /books로 연결했다면 /books/inbox, /books/sorted처럼 지정합니다.</div>
+  <label for="download_path">다운로드 폴더</label><div class="gb-path"><input id="download_path" name="download_path" type="text" value="{{ config.download_path }}" required><button type="button" class="gb-btn" data-folder="download_path">폴더 선택</button></div>
+  <label for="target_path">정리 결과 폴더</label><div class="gb-path"><input id="target_path" name="target_path" type="text" value="{{ config.target_path }}" required><button type="button" class="gb-btn" data-folder="target_path">폴더 선택</button></div>
+  <div class="gb-muted">시놀로지·헤놀로지 NAS의 FF에서 보이는 폴더를 선택하세요. 예: NAS의 /volume1/books를 FF 컨테이너의 /books에 연결했다면 /books를 선택합니다. 목록에 공유 폴더가 없다면 컨테이너 볼륨 연결을 확인하세요.</div>
   <div class="gb-three"><div><label for="request_delay">요청 간격 (초)</label><input id="request_delay" name="request_delay" type="number" min="1" max="300" step="0.5" value="{{ config.request_delay }}" required></div><div><label for="page_delay">페이지 간 대기 (초)</label><input id="page_delay" name="page_delay" type="number" min="1" max="3600" step="0.5" value="{{ config.page_delay }}" required></div><div><label for="timeout">응답 제한 시간 (초)</label><input id="timeout" name="timeout" type="number" min="5" max="120" value="{{ config.timeout }}" required></div></div>
  </div>
  <div class="gb-card"><div class="gb-number">02 · SCHEDULE</div><h3>새 글 자동 다운로드</h3>
@@ -74,6 +79,15 @@
  <div class="gb-card"><h3>작업 이력</h3><label for="run_kind">작업 종류</label><select id="run_kind"><option value="download">다운로드</option><option value="organize">정리</option></select><div class="gb-table"><table><thead><tr><th>시작 시각</th><th>작업</th><th>결과</th><th></th></tr></thead><tbody id="runs_rows"></tbody></table></div><div class="gb-pager"><button id="runs_prev" class="gb-btn">이전</button><span id="runs_page"></span><button id="runs_next" class="gb-btn">다음</button></div></div>
  <div class="gb-card" id="detail_card" hidden><h3>파일별 작업 결과</h3><div class="gb-table"><table><thead><tr><th>파일</th><th>결과</th><th>저장 위치 / 오류</th></tr></thead><tbody id="detail_rows"></tbody></table></div><div class="gb-pager"><button id="detail_prev" class="gb-btn">이전</button><span id="detail_page"></span><button id="detail_next" class="gb-btn">다음</button></div></div>
  {% endif %}
+<dialog id="folder_dialog" aria-labelledby="folder_title">
+ <div class="gb-top"><h3 id="folder_title">저장 폴더 선택</h3><button type="button" id="folder_close" class="gb-btn">닫기</button></div>
+ <p class="gb-muted">NAS의 FF가 접근할 수 있는 폴더입니다. 파일은 표시하지 않습니다.</p>
+ <label for="folder_path">폴더 경로</label><div class="gb-path"><input id="folder_path" type="text" autocomplete="off"><button type="button" id="folder_go" class="gb-btn">이동</button></div>
+ <div class="gb-actions"><button type="button" id="folder_root" class="gb-btn">최상위 /</button><button type="button" id="folder_data" class="gb-btn">FF 데이터 폴더</button><button type="button" id="folder_up" class="gb-btn">상위 폴더</button></div>
+ <p id="folder_error" class="gb-folder-error" role="status" aria-live="polite"></p><div id="folder_list" class="gb-folder-list"></div>
+ <div class="gb-pager"><button type="button" id="folder_prev" class="gb-btn">이전</button><span id="folder_page"></span><button type="button" id="folder_next" class="gb-btn">다음</button></div>
+ <div class="gb-actions"><button type="button" id="folder_choose" class="gb-btn primary" disabled>현재 폴더 선택</button><span class="gb-muted">선택 후 원래 화면에서 저장하세요.</span></div>
+</dialog>
 </div>
 <script>
 (()=>{'use strict';
@@ -102,6 +116,14 @@ action('pause',async()=>message((await post('pause')).msg));action('stop',async(
 if($('select_page'))$('select_page').addEventListener('change',()=>{document.querySelectorAll('#plan_rows input:not(:disabled)').forEach(x=>{x.checked=$('select_page').checked;x.checked?selected.add(x.dataset.key):selected.delete(x.dataset.key);});controls();});
 action('plan_prev',async()=>{planPage=Math.max(1,planPage-1);await plan();});action('plan_next',async()=>{planPage++;await plan();});action('history_prev',async()=>{historyPage=Math.max(1,historyPage-1);await history();});action('history_next',async()=>{historyPage++;await history();});action('refresh_history',async()=>{await history();await runs();});action('runs_prev',async()=>{runsPage=Math.max(1,runsPage-1);await runs();});action('runs_next',async()=>{runsPage++;await runs();});action('detail_prev',async()=>{detailPage=Math.max(1,detailPage-1);await details();});action('detail_next',async()=>{detailPage++;await details();});
 if($('failed_only'))$('failed_only').addEventListener('change',()=>{historyPage=1;history().catch(e=>message(e.message,true));});if($('run_kind'))$('run_kind').addEventListener('change',()=>{runsPage=1;runs().catch(e=>message(e.message,true));});
+let folderTarget='',folderCurrent='',folderParent='/',folderPage=1,folderRequest=0,folderTrigger=null;
+async function loadFolders(path,p=1,nearest=false){const serial=++folderRequest;$('folder_choose').disabled=true;$('folder_list').replaceChildren();$('folder_error').textContent='폴더를 불러오는 중…';try{const d=await post('folders',path,p,nearest?'nearest':'');if(serial!==folderRequest||!$('folder_dialog').open)return;folderCurrent=d.path;folderParent=d.parent;folderPage=d.page;$('folder_path').value=d.path;$('folder_error').textContent=d.notice;d.rows.forEach(row=>{const b=document.createElement('button');b.type='button';b.className='gb-btn';b.textContent='📁 '+row.name;b.addEventListener('click',()=>loadFolders(row.path));$('folder_list').appendChild(b);});if(!d.rows.length)$('folder_list').textContent='하위 폴더가 없습니다.';$('folder_page').textContent=d.page+' 페이지 · 폴더 '+d.total+'개';$('folder_prev').disabled=d.page<=1;$('folder_next').disabled=!d.more;$('folder_up').disabled=d.path===d.parent;$('folder_choose').disabled=false;}catch(e){if(serial===folderRequest)$('folder_error').textContent=e.message;}}
+document.querySelectorAll('[data-folder]').forEach(button=>button.addEventListener('click',()=>{folderTarget=button.dataset.folder;folderTrigger=button;$('folder_title').textContent=folderTarget==='target_path'?'정리 결과 폴더 선택':'다운로드 폴더 선택';$('folder_dialog').showModal();loadFolders($(folderTarget).value||'/',1,true);}));
+$('folder_close').addEventListener('click',()=>$('folder_dialog').close());$('folder_dialog').addEventListener('close',()=>{folderRequest++;if(folderTrigger)folderTrigger.focus();});
+$('folder_go').addEventListener('click',()=>loadFolders($('folder_path').value));$('folder_path').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadFolders(e.target.value);}});
+$('folder_root').addEventListener('click',()=>loadFolders('/'));$('folder_data').addEventListener('click',()=>loadFolders({{ data_path|tojson }}));$('folder_up').addEventListener('click',()=>loadFolders(folderParent));$('folder_prev').addEventListener('click',()=>loadFolders(folderCurrent,folderPage-1));$('folder_next').addEventListener('click',()=>loadFolders(folderCurrent,folderPage+1));
+$('folder_choose').addEventListener('click',()=>{if(!folderCurrent)return;$(folderTarget).value=folderCurrent;$('folder_dialog').close();$(folderTarget).focus();});
+action('save_download_path',async()=>{const d=await post('save_download_path',$('download_path').value);$('download_path').value=d.path;$('saved_download_path').textContent=d.path;message(d.msg);});
 if($('settings'))$('settings').addEventListener('submit',async e=>{e.preventDefault();$('save').disabled=true;try{const form=new FormData($('settings')),raw=Object.fromEntries(form.entries());['basic_auto_start','bare_numbers','auto_organize','organize_auto','clear_cookie'].forEach(k=>raw[k]=form.has(k));message((await post('save',JSON.stringify(raw))).msg);$('cookie').value='';$('settings').elements.clear_cookie.checked=false;}catch(e){message(e.message,true);}finally{$('save').disabled=false;}});
 poll();window.addEventListener('beforeunload',()=>clearTimeout(timer));
 })();

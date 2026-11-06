@@ -197,7 +197,14 @@ class ModuleBasic(PluginModuleBase):
             if command == 'pause':
                 return jsonify(ret='success', msg=self.engine.pause())
             if command == 'stop':
-                self.organizer.stop()
+                if arg1 == 'organize':
+                    self.organizer.stop()
+                    return jsonify(ret='success', msg='정리 중지를 요청했습니다. 완료된 복사본은 유지합니다.')
+                if arg1 == 'epub':
+                    self.epub.stop()
+                    return jsonify(ret='success', msg='EPUB 생성 중지를 요청했습니다.')
+                if arg1 not in (None, '', 'download'):
+                    raise Error('중지할 작업이 올바르지 않습니다.')
                 return jsonify(ret='success', msg=self.engine.stop())
             if command == 'plan':
                 return jsonify(ret='success', **self.organizer.preview_page(max(1, int(arg1 or 1))))

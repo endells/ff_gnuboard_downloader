@@ -15,11 +15,11 @@
 @media(max-width:480px){.gb-path{flex-wrap:wrap}.gb-path input{flex-basis:100%}.gb dialog{padding:14px}}
 </style>
 <div class="gb">
- <div class="gb-top"><div><div class="gb-number">BOARD ARCHIVE · TXT ONLY</div><h2>그누보드 TXT 다운로더 <span class="gb-muted">v0.1.8</span></h2></div><span class="gb-tag" id="schedule">예약 확인 중</span></div>
+ <div class="gb-top"><div><div class="gb-number">BOARD ARCHIVE · TXT ONLY</div><h2>그누보드 TXT 다운로더 <span class="gb-muted">v0.1.9</span></h2></div><span class="gb-tag" id="schedule">예약 확인 중</span></div>
  <p class="gb-muted">플러그인 로딩 완료 · 다운로드와 정리 기능을 사용할 수 있습니다.</p>
  <p class="gb-muted">한 폴더에 모으고, 같은 제목의 연재물을 편수 기준으로 정리합니다.</p>
  <div class="gb-card">
-  <div class="gb-top"><strong id="state" class="gb-status">상태 확인 중</strong><div class="gb-top"><button id="pause" class="gb-btn" disabled>일시정지</button><button id="resume" class="gb-btn" disabled>이어받기</button><button id="stop" class="gb-btn danger">중지</button></div></div>
+  <div class="gb-top"><strong id="state" class="gb-status">상태 확인 중</strong><div class="gb-top"><button id="pause" class="gb-btn" disabled>일시정지</button><button id="resume" class="gb-btn" disabled>이어받기</button><button id="stop" class="gb-btn danger" disabled>중지</button></div></div>
   <div class="gb-progress"><div id="progress"></div></div><div id="counts" class="gb-muted"></div>
   <div class="gb-divider"></div><div id="orgstate" class="gb-muted gb-status">정리 작업 대기</div>
   <div id="message" class="gb-message" role="status" aria-live="polite"></div>
@@ -50,7 +50,7 @@
  <div class="gb-card"><h3>정리된 폴더 → EPUB</h3><p class="gb-muted">대상: {{ config.target_path }} 바로 아래의 작품 폴더. 단편 폴더는 제외하고, 각 작품 폴더 안의 TXT만 묶어 같은 폴더에 작품명.epub으로 저장합니다. TXT는 유지합니다.</p>
  <label class="gb-check"><input type="radio" name="epub_mode" value="all" checked>전체 작품 폴더 (기본)</label><label class="gb-check"><input type="radio" name="epub_mode" value="selected">선택한 작품 폴더만</label>
  <button type="button" class="gb-btn" id="epub_refresh">작품 폴더 목록 새로고침</button><div id="epub_folders" class="gb-folder-list"></div>
- <div class="gb-actions"><button type="button" class="gb-btn primary" id="epub_start" data-work>EPUB 생성 / 업데이트</button><button type="button" class="gb-btn" id="epub_stop">EPUB 생성 중지</button></div>
+ <div class="gb-actions"><button type="button" class="gb-btn primary" id="epub_start" data-work>EPUB 생성 / 업데이트</button><button type="button" class="gb-btn" id="epub_stop" disabled>EPUB 생성 중지</button></div>
  <p class="gb-muted">같은 내용은 건너뛰며 새 회차가 있으면 이 기능으로 만든 EPUB을 갱신합니다. 외부에서 만든 동명 EPUB은 보존하고 오류로 표시합니다.</p><p id="epub_state" role="status"></p><div id="epub_results" class="gb-message"></div></div>
  {% elif page == 'setting' %}
  <form id="settings">
@@ -98,27 +98,66 @@
 <script>
 (()=>{'use strict';
 const endpoint={{ ('/' + package_name + '/ajax/basic/command')|tojson }},token={{ csrf_token|tojson }},page={{ page|tojson }};
-const $=id=>document.getElementById(id),selected=new Set();let busy=false,last='',timer,planStamp='',planPage=1,historyPage=1,runsPage=1,detailPage=1,detailId=0,detailKind='download';
+const $=id=>document.getElementById(id),selected=new Set();let polling=false,pollAgain=false,focus=page==='organize'?'organize':'download',stopKind=focus,busy=false,last='',timer,planStamp='',planPage=1,historyPage=1,runsPage=1,detailPage=1,detailId=0,detailKind='download';
 const labels={idle:'대기',running:'실행 중',completed:'완료',completed_with_errors:'일부 실패',failed:'실패',cancelled:'중지',paused:'일시정지',interrupted:'중단됨',analyze:'목록 분석',range:'페이지 수집',until:'끝까지 수집',latest:'새 글 확인',preview:'정리 미리보기',copy:'선택 복사',scheduled:'자동 정리',copied:'복사 완료',skipped:'기존 파일',downloaded:'저장 완료'};
 const label=x=>labels[x]||x||'',time=x=>x?new Date(x).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false}):'';
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error);}
 async function post(command,a,b,c){const body=new URLSearchParams({command,csrf_token:token});[a,b,c].forEach((v,i)=>{if(v!==undefined)body.set('arg'+(i+1),String(v));});const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',body});let d;try{d=await response.json();}catch(e){throw new Error('FF 응답을 읽지 못했습니다. 페이지를 새로고침하세요.');}if(!response.ok||d.ret!=='success')throw new Error(d.msg||'처리에 실패했습니다.');return d;}
-function action(id,fn){if($(id))$(id).addEventListener('click',async()=>{const el=$(id);el.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{el.disabled=false;controls();}});}
+function action(id,fn){if($(id))$(id).addEventListener('click',async()=>{const el=$(id);el.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{if(!['stop','pause','resume','epub_stop'].includes(id))el.disabled=false;controls();}});}
 function cell(row,text){const td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
 function rowAt(id){const r=document.createElement('tr');$(id).appendChild(r);return r;}
 function empty(id,cols){if(!$(id).children.length)cell(rowAt(id),'표시할 기록이 없습니다.').colSpan=cols;}
 function pager(prefix,n,more){$(prefix+'_page').textContent=n+' 페이지';$(prefix+'_prev').disabled=n<=1;$(prefix+'_next').disabled=!more;}
 function controls(){document.querySelectorAll('[data-work]').forEach(el=>el.disabled=busy);if($('copy'))$('copy').disabled=busy||!selected.size;if($('selected_count'))$('selected_count').textContent='('+selected.size+'개 선택)';}
-async function start(cmd,a,b){message((await post(cmd,a,b)).msg);busy=true;last='running';controls();}
+async function start(cmd,a,b){message((await post(cmd,a,b)).msg);focus=cmd==='epub_start'?'epub':['preview','copy','organize_now'].includes(cmd)?'organize':'download';busy=true;last='running';$('state').textContent='작업 상태 확인 중';controls();await poll();}
 async function analysis(){const d=(await post('analysis')).analysis;$('analysis_rows').replaceChildren();if(d){$('analysis_summary').textContent=d.page+'페이지 · '+d.rows.length+'개 · 확인된 마지막 페이지 '+d.last_page;d.rows.forEach(x=>{const r=rowAt('analysis_rows');cell(r,x.id);cell(r,x.title);});}empty('analysis_rows',2);}
 async function plan(){const d=await post('plan',planPage);if(planStamp!==d.created){planStamp=d.created;selected.clear();}$('plan_rows').replaceChildren();$('select_page').checked=false;$('plan_summary').textContent=d.ready?'TXT '+d.scanned+'개 · 제목 '+d.total_groups+'개 · 기준 충족 '+d.eligible_groups+'개':'미리보기를 실행하세요.';d.rows.forEach(g=>{const r=rowAt('plan_rows'),check=document.createElement('input');check.type='checkbox';check.disabled=g.excluded;check.checked=selected.has(g.key);check.dataset.key=g.key;check.addEventListener('change',()=>{check.checked?selected.add(g.key):selected.delete(g.key);controls();});cell(r,'').appendChild(check);const td=cell(r,g.title),details=document.createElement('details'),summary=document.createElement('summary'),sample=document.createElement('pre');summary.textContent='파일 '+g.file_count+'개 보기';sample.textContent=g.sample.join('\n')+(g.file_count>5?'\n…':'');details.append(summary,sample);td.appendChild(details);cell(r,g.count+'편');cell(r,g.excluded?'제외 목록':(g.category||'작품 폴더')+' · '+g.completed+'/'+g.file_count+'개 복사 완료');});empty('plan_rows',4);pager('plan',planPage,d.more);controls();}
 async function history(){const d=await post('history',historyPage,$('failed_only').checked?'failed':'');$('history_rows').replaceChildren();d.rows.forEach(x=>{const r=rowAt('history_rows');cell(r,time(x.updated));cell(r,x.title+' ['+x.post_id+']');cell(r,label(x.status));cell(r,x.error||x.path);});empty('history_rows',4);pager('history',historyPage,d.more);}
 async function runs(){const d=await post('runs',runsPage,$('run_kind').value);$('runs_rows').replaceChildren();d.rows.forEach(x=>{const r=rowAt('runs_rows');cell(r,time(x.started));cell(r,label(x.mode));let s={};try{s=JSON.parse(x.summary||'{}');}catch(e){}cell(r,label(x.status)+' · '+(s.message||''));const button=document.createElement('button');button.className='gb-btn';button.textContent='상세';button.addEventListener('click',()=>{detailId=x.id;detailPage=1;detailKind=$('run_kind').value;details().catch(e=>message(e.message,true));});cell(r,'').appendChild(button);});empty('runs_rows',4);pager('runs',runsPage,d.more);}
 async function details(){const d=await post('details',detailId,detailPage,detailKind);$('detail_card').hidden=false;$('detail_rows').replaceChildren();d.rows.forEach(x=>{const r=rowAt('detail_rows');cell(r,x.filename);cell(r,label(x.status));cell(r,x.error||x.destination);});empty('detail_rows',3);pager('detail',detailPage,d.more);}
-async function poll(){try{const d=await post('status'),s=d.state,o=d.organize;busy=s.status==='running'||o.status==='running'||d.epub.status==='running';if($('epub_state')){$('epub_state').textContent=d.epub.message;$('epub_stop').disabled=d.epub.status!=='running';$('epub_results').textContent=(d.epub.results||[]).map(x=>x.name+' · '+({created:'생성 / 갱신',skipped:'변경 없음',failed:'실패'}[x.status]||x.status)+' · '+(x.error||x.path||'')).join('\n');}$('state').textContent=label(s.status)+' · '+s.message;$('orgstate').textContent='정리: '+label(o.status)+' · '+o.message;$('counts').textContent='페이지 '+(s.page||'-')+' · 저장 '+(s.downloaded||0)+' · 기존 '+(s.skipped||0)+' · 실패 '+(s.failed||0);$('progress').style.width=(s.page_total?100*(s.page_done||0)/s.page_total:0)+'%';$('pause').disabled=s.status!=='running';$('resume').disabled=busy||!s.can_resume;$('schedule').textContent='새 글 '+(d.schedule?'예약 켜짐':'예약 꺼짐')+' · 정리 '+(d.organize_schedule?'예약 켜짐':'예약 꺼짐');controls();const signature=s.status+'|'+o.status;if(signature!==last&&!busy){if(page==='download')await analysis();if(page==='organize')await plan();if(page==='history'){await history();await runs();}}last=signature;}catch(e){message('상태 확인 실패: '+e.message,true);}finally{timer=setTimeout(poll,busy?2000:5000);}}
+function renderProgress(d){
+ const states={download:d.state,organize:d.organize,epub:d.epub},names={download:'다운로드',organize:'정리',epub:'EPUB'};
+ const active=Object.keys(states).find(k=>states[k].status==='running');
+ if(active)focus=active;
+ const kind=active||focus,s=states[kind];stopKind=kind;
+ busy=!!active;
+ $('state').textContent=names[kind]+' · '+label(s.status)+' · '+(s.message||'');
+ $('orgstate').textContent=kind==='organize'?'다운로드: '+label(d.state.status)+' · '+(d.state.message||''):'정리: '+label(d.organize.status)+' · '+(d.organize.message||'');
+ let done=0,total=0;
+ if(kind==='organize'){
+  done=s.processed||0;total=s.total||0;
+  $('counts').textContent='처리 '+done+' / '+total+'개 · 복사 '+(s.copied||0)+' · 동일 파일 '+(s.skipped||0)+' · 실패 '+(s.failed||0);
+ }else if(kind==='epub'){
+  done=s.done||0;total=s.total||0;$('counts').textContent='작품 폴더 '+done+' / '+total+'개 처리';
+ }else{
+  done=s.page_done||0;total=s.page_total||0;
+  $('counts').textContent='페이지 '+(s.page||'-')+' · 저장 '+(s.downloaded||0)+' · 기존 '+(s.skipped||0)+' · 실패 '+(s.failed||0);
+ }
+ $('progress').style.width=(total?Math.min(100,100*done/total):0)+'%';
+ $('pause').disabled=kind!=='download'||s.status!=='running';
+ $('resume').disabled=kind!=='download'||busy||!s.can_resume;
+ $('stop').disabled=!(s.status==='running'||kind==='download'&&s.status==='paused');
+ if($('epub_state')){
+  $('epub_state').textContent=d.epub.message;$('epub_stop').disabled=d.epub.status!=='running';
+  $('epub_results').textContent=(d.epub.results||[]).map(x=>x.name+' · '+({created:'생성 / 갱신',skipped:'변경 없음',failed:'실패'}[x.status]||x.status)+' · '+(x.error||x.path||'')).join('\n');
+ }
+ $('schedule').textContent='새 글 '+(d.schedule?'예약 켜짐':'예약 꺼짐')+' · 정리 '+(d.organize_schedule?'예약 켜짐':'예약 꺼짐');controls();
+}
+async function poll(){
+ if(polling){pollAgain=true;return;}
+ clearTimeout(timer);polling=true;
+ try{
+  const d=await post('status');renderProgress(d);
+  const signature=d.state.status+'|'+d.organize.status+'|'+d.epub.status;
+  if(signature!==last&&!busy){if(page==='download')await analysis();if(page==='organize')await plan();if(page==='history'){await history();await runs();}}
+  last=signature;
+ }catch(e){message('상태 확인 실패: '+e.message,true);}
+ finally{polling=false;timer=setTimeout(poll,pollAgain?0:busy?1000:5000);pollAgain=false;}
+}
+
 const number=id=>{const n=Number($(id).value);if(!Number.isInteger(n)||n<1||n>1000000)throw new Error('올바른 페이지 번호를 입력하세요.');return n;};
 action('analyze',()=>start('analyze',number('start_page')));action('single',()=>start('range',number('start_page'),number('start_page')));action('range',()=>start('range',number('start_page'),number('end_page')));action('until',()=>start('until',number('start_page')));action('latest',()=>start('latest'));action('resume',()=>start('resume'));
-action('pause',async()=>message((await post('pause')).msg));action('stop',async()=>message((await post('stop')).msg));action('preview',async()=>{planPage=1;selected.clear();await start('preview');});action('copy',()=>start('copy',JSON.stringify([...selected])));action('organize_now',()=>start('organize_now'));
+action('pause',async()=>{message((await post('pause')).msg);await poll();});action('stop',async()=>{message((await post('stop',stopKind)).msg);await poll();});action('preview',async()=>{planPage=1;selected.clear();await start('preview');});action('copy',()=>start('copy',JSON.stringify([...selected])));action('organize_now',()=>start('organize_now'));
 if($('select_page'))$('select_page').addEventListener('change',()=>{document.querySelectorAll('#plan_rows input:not(:disabled)').forEach(x=>{x.checked=$('select_page').checked;x.checked?selected.add(x.dataset.key):selected.delete(x.dataset.key);});controls();});
 action('plan_prev',async()=>{planPage=Math.max(1,planPage-1);await plan();});action('plan_next',async()=>{planPage++;await plan();});action('history_prev',async()=>{historyPage=Math.max(1,historyPage-1);await history();});action('history_next',async()=>{historyPage++;await history();});action('refresh_history',async()=>{await history();await runs();});action('runs_prev',async()=>{runsPage=Math.max(1,runsPage-1);await runs();});action('runs_next',async()=>{runsPage++;await runs();});action('detail_prev',async()=>{detailPage=Math.max(1,detailPage-1);await details();});action('detail_next',async()=>{detailPage++;await details();});
 if($('failed_only'))$('failed_only').addEventListener('change',()=>{historyPage=1;history().catch(e=>message(e.message,true));});if($('run_kind'))$('run_kind').addEventListener('change',()=>{runsPage=1;runs().catch(e=>message(e.message,true));});

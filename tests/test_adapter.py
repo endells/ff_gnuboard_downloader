@@ -135,6 +135,17 @@ class Adapter(unittest.TestCase):
         response = self.client.post('/ff_gnuboard_downloader/ajax/basic/command', data={'command': 'epub_start', 'arg1': 'all'})
         self.assertEqual(response.status_code, 403)
 
+    def test_stop_only_selected_worker(self):
+        with patch.object(self.module.engine, 'stop') as download, patch.object(self.module.organizer, 'stop') as organize, patch.object(self.module.epub, 'stop') as epub:
+            self.assertEqual(self.post('stop', 'organize').get_json()['ret'], 'success')
+            organize.assert_called_once()
+            download.assert_not_called()
+            epub.assert_not_called()
+            self.assertEqual(self.post('stop', 'epub').get_json()['ret'], 'success')
+            epub.assert_called_once()
+            download.assert_not_called()
+            self.assertEqual(self.post('stop', 'invalid').get_json()['ret'], 'error')
+
     def test_all_tabs_initial_empty_config(self):
         with self.app.app_context():
             self.module.plugin_load()

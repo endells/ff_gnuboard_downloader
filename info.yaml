@@ -2,7 +2,7 @@
   "package_name": "ff_gnuboard_downloader",
   "title": "그누보드 TXT 다운로더",
   "description": "페이지별 TXT 수집 · 새 글 예약 확인 · 제목별 자동 복사",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "developer": "endells",
   "home": "https://github.com/endells/ff_gnuboard_downloader",
   "more": ""

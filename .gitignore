@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.db
+*.db-*
+*.lock
+*.stop
+*.pause
+*_cookie.json
+downloads/

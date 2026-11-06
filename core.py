@@ -12,6 +12,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
+from .parser_dependencies import ensure_parser_dependencies
+
+ensure_parser_dependencies()
 from bs4 import BeautifulSoup, Comment
 
 from .html_select import SelectorError, select, select_one, validate_selector
@@ -222,7 +225,7 @@ class Client:
     def __init__(self, config, cookie='', check=None):
         self.config, self.check = config, check or (lambda: None)
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'FF-Gnuboard-TXT/0.1.2', 'Accept': 'text/html'})
+        self.session.headers.update({'User-Agent': 'FF-Gnuboard-TXT/0.1.3', 'Accept': 'text/html'})
         if cookie:
             self.session.headers['Cookie'] = cookie
         self.last_request = 0.0

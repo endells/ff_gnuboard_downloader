@@ -1,4 +1,4 @@
-# 그누보드 TXT 다운로더 · FF 플러그인 v0.1.2
+# 그누보드 TXT 다운로더 · FF 플러그인 v0.1.3
 
 그누보드 게시판의 게시글을 한 폴더에 제목별 TXT로 저장하고, 같은 작품이 설정한 편수 이상 모이면 작품 폴더로 복사합니다. EPUB·이미지 다운로드는 만들지 않습니다.
 
@@ -22,7 +22,7 @@ https://github.com/endells/ff_gnuboard_downloader
 FF는 플러그인 폴더를 찾았지만 `setup.py` 초기화를 완료하지 못했을 때 이 형태로 표시할 수 있습니다. `null`은 설명이 아니라 FF의 로딩 상태 표시입니다. 이 화면만으로 실제 오류 원인을 알 수는 없습니다.
 
 1. FF를 재시작하세요. 기본 설정에서는 시작할 때 Git 플러그인이 업데이트됩니다. 자동 업데이트를 꺼 놓았다면 시스템 설정의 `config.yaml`에서 `plugin_update: true`를 확인하세요. `UPDATE_STOP=true` 또는 `PLUGIN_UPDATE_FROM_PYTHON=false` 환경변수로 업데이트가 차단된 경우에는 아래 수동 갱신 명령을 사용하세요.
-2. 정상 반영되면 목록에 **그누보드 TXT 다운로더 / endells / 0.1.2**이 나타납니다.
+2. 정상 반영되면 목록에 **그누보드 TXT 다운로더 / endells / 0.1.3**이 나타납니다.
 3. 플러그인 메뉴를 열어 **플러그인 로딩 완료** 또는 **파일 설치 완료 · 실행 준비 실패** 상태를 확인하세요. 실패 화면에는 오류와 해결 방법이 표시됩니다.
 4. 여전히 제목이 비어 있으면 FF 시스템 시작 로그에서 `ff_gnuboard_downloader` 또는 `NOT normal plugin` 앞뒤의 Traceback을 확인하세요.
 
@@ -33,6 +33,13 @@ git -C /data/plugins/ff_gnuboard_downloader pull --ff-only
 ```
 
 업데이트를 위해 플러그인을 삭제하거나 DB·TXT를 지울 필요는 없습니다.
+
+### 0.1.3 변경 사항
+
+- FF에 `bs4`와 `soupsieve`가 모두 없어도 실행되도록 파서 wheel을 동봉했습니다. 별도 pip 설치나 시작 시 패키지 다운로드가 필요하지 않습니다.
+- 기존 FF에 설치된 패키지를 우선하며, 없는 패키지만 동봉 파일에서 불러옵니다. 시스템 패키지를 설치하거나 업그레이드하지 않습니다.
+- Python의 site-packages를 끈 환경에서 두 파서 로딩과 합성 HTML의 TXT 저장을 검증했습니다.
+- 동봉 파일 출처·버전·해시·라이선스는 `vendor/README.md`에 있습니다.
 
 ### 0.1.2 변경 사항
 
@@ -64,7 +71,7 @@ FF 데이터 경로가 `/data`인 경우 파일 위치는 다음과 같아야 �
 
 `ff_gnuboard_downloader/ff_gnuboard_downloader/setup.py`처럼 폴더가 두 겹이면 로딩되지 않습니다. Synology File Station에서는 FF 컨테이너의 `/data`에 연결된 NAS 폴더를 찾아 그 안의 `plugins`에 복사하세요. 기존에 설치한 `munpia_free`와 나란히 두면 됩니다. 실제 데이터 경로가 `/data`와 다르면 그 경로를 사용합니다.
 
-FF 컨테이너에서 사용하는 Python에 `requests`, `beautifulsoup4`가 필요합니다. 보통 FF에 설치되어 있지만, 로딩 로그에 `No module named 'bs4'` 등이 나오면 해당 컨테이너 콘솔에서 실행하세요.
+FF 컨테이너의 `requests`를 사용합니다. HTML 파서 `beautifulsoup4`와 `soupsieve`는 v0.1.3부터 함께 제공하므로 별도 설치할 필요가 없습니다. 직접 의존성을 관리하려는 경우에만 아래 명령을 사용하세요.
 
 ```bash
 python3 -m pip install -r /data/plugins/ff_gnuboard_downloader/requirements.txt
